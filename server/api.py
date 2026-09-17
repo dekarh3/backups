@@ -79,14 +79,6 @@ class Command(BaseModel):
     ttl_hours: int = 12
 
 
-class ClientStatus(BaseModel):
-    client_name: str
-    online: bool
-    last_contact: Optional[datetime] = None
-    agent_version: Optional[str] = None
-    backups: Dict[str, BackupStatus] = {}
-
-
 class BackupStatus(BaseModel):
     backup_name: str
     enabled: bool
@@ -95,6 +87,14 @@ class BackupStatus(BaseModel):
     status: str = 'unknown'
     progress: Optional[float] = None
     last_snapshot_size: Optional[int] = None
+
+
+class ClientStatus(BaseModel):
+    client_name: str
+    online: bool
+    last_contact: Optional[datetime] = None
+    agent_version: Optional[str] = None
+    backups: Dict[str, BackupStatus] = {}
 
 
 class SnapshotInfo(BaseModel):
