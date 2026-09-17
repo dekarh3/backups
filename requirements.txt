@@ -1,0 +1,167 @@
+# Requirements for Backup System
+
+## Server Requirements (RedOS 8)
+
+### Python Dependencies
+```
+fastapi>=0.68.0
+uvicorn[standard]>=0.15.0
+asyncpg>=0.23.0
+jinja2>=3.0.0
+python-multipart>=0.0.5
+requests>=2.26.0
+pydantic>=1.8.0
+```
+
+### System Dependencies
+- Python 3.8+
+- PostgreSQL 12+
+- rest-server (restic REST API server)
+- restic (for server-side operations)
+- SSL certificates
+
+## Client Requirements
+
+### Windows 7 Pro
+- Python 3.8+
+- restic 0.15.2
+- requests library
+
+### RedOS 8 / Linux
+- Python 3.8+
+- restic 0.19.1
+- requests library
+
+## Installation
+
+### Server Setup
+
+1. Install system packages:
+```bash
+sudo dnf install python3 python3-pip postgresql-server postgresql-contrib
+```
+
+2. Install Python dependencies:
+```bash
+pip3 install fastapi uvicorn[standard] asyncpg jinja2 python-multipart requests pydantic
+```
+
+3. Install rest-server:
+```bash
+wget https://github.com/restic/rest-server/releases/download/v0.11.0/rest-server_0.11.0_linux_amd64
+chmod +x rest-server_0.11.0_linux_amd64
+sudo mv rest-server_0.11.0_linux_amd64 /usr/local/bin/rest-server
+```
+
+4. Install restic:
+```bash
+wget https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2
+bunzip2 restic_0.19.1_linux_amd64.bz2
+chmod +x restic_0.19.1_linux_amd64
+sudo mv restic_0.19.1_linux_amd64 /usr/local/bin/restic
+```
+
+5. Initialize PostgreSQL:
+```bash
+sudo postgresql-setup initdb
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+sudo -u postgres psql -c "CREATE DATABASE backups;"
+sudo -u postgres psql -c "CREATE USER backups WITH PASSWORD 'password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE backups TO backups;"
+```
+
+6. Create directory structure:
+```bash
+sudo mkdir -p /opt/backups/{ini/clients,ini/backups,secrets,keys/clients,auth,ssl}
+sudo mkdir -p /srv/backups/restic
+sudo mkdir -p /var/log/backups
+```
+
+7. Generate SSL certificates:
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /opt/backups/ssl/server.key \
+  -out /opt/backups/ssl/server.crt
+```
+
+8. Generate signing keys:
+```bash
+openssl genrsa -out /opt/backups/keys/backups.key 2048
+openssl rsa -in /opt/backups/keys/backups.key -pubout -out /opt/backups/keys/backups.pub
+```
+
+### Client Setup
+
+1. Install Python and restic:
+```bash
+# Windows (PowerShell as Administrator)
+choco install python restic
+
+# RedOS/Linux
+sudo dnf install python3
+wget https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2
+bunzip2 restic_0.19.1_linux_amd64.bz2
+chmod +x restic_0.19.1_linux_amd64
+sudo mv restic_0.19.1_linux_amd64 /usr/local/bin/restic
+```
+
+2. Copy client scripts to client machine:
+```
+cerber.py
+manager.py
+worker.py
+```
+
+3. Create configuration directory:
+```bash
+mkdir -p /opt/backups/ini
+```
+
+4. Configure client.ini with server details and authentication tokens.
+
+## Running the Services
+
+### Server
+
+1. Start rest-server:
+```bash
+python3 /path/to/rest_server_wrapper.py --config /opt/backups/ini/backups.ini
+```
+
+2. Start API server:
+```bash
+python3 /path/to/api.py --host 0.0.0.0 --port 9443 \
+  --ssl-cert /opt/backups/ssl/server.crt \
+  --ssl-key /opt/backups/ssl/server.key
+```
+
+3. Start Web Interface:
+```bash
+python3 /path/to/interface.py --host 0.0.0.0 --port 9443 \
+  --ssl-cert /opt/backups/ssl/server.crt \
+  --ssl-key /opt/backups/ssl/server.key \
+  --api-url https://localhost:9443
+```
+
+### Client
+
+1. Start Cerber (watchdog):
+```bash
+# Windows
+python cerber.py --client ws01
+
+# Linux
+python3 /opt/backups/client/cerber.py --client ws01
+```
+
+Cerber will automatically start manager.py and worker.py as needed.
+
+## Configuration Files
+
+See `/workspace/backups/config/` for example configurations:
+- `backups.ini` - Global server configuration
+- `clients/ws01.ini` - Client configuration
+- `backups/ws01.documents.ini` - Backup configuration
+- `calendar.ini` - Holiday calendar

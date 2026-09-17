@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="nav">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/clients">Clients</a>
+    <a href="/backups">Backups</a>
+    <a href="/snapshots">Snapshots</a>
+    <a href="/alerts">Alerts</a>
+    <a href="/logs">Logs</a>
+    {% if user and user.role == 'admin' %}
+        <a href="/settings">Settings</a>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>System Overview</h2>
+    <table>
+        <tr>
+            <th>Metric</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Total Clients</td>
+            <td>{{ clients|length if clients else 0 }}</td>
+        </tr>
+        <tr>
+            <td>Active Alerts</td>
+            <td class="{% if alerts and alerts|length > 0 %}status-warning{% else %}status-ok{% endif %}">
+                {{ alerts|length if alerts else 0 }}
+            </td>
+        </tr>
+        <tr>
+            <td>Last Update</td>
+            <td>{{ current_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Clients Status</h2>
+    {% if clients %}
+    <table>
+        <tr>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Last Contact</th>
+            <th>Active Backups</th>
+            <th>Actions</th>
+        </tr>
+        {% for client in clients %}
+        <tr>
+            <td><a href="/clients/{{ client.client_name }}">{{ client.client_name }}</a></td>
+            <td class="{% if client.online %}status-ok{% else %}status-error{% endif %}">
+                {% if client.online %}Online{% else %}Offline{% endif %}
+            </td>
+            <td>{{ client.last_contact or 'Never' }}</td>
+            <td>{{ client.active_backups|length if client.active_backups else 0 }}</td>
+            <td>
+                <form method="POST" action="/clients/{{ client.client_name }}/restart" style="display:inline;">
+                    <button type="submit" class="btn btn-warning">Restart Stack</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No clients configured.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Alerts</h2>
+    {% if alerts %}
+    <table>
+        <tr>
+            <th>Time</th>
+            <th>Severity</th>
+            <th>Message</th>
+        </tr>
+        {% for alert in alerts %}
+        <tr>
+            <td>{{ alert.timestamp }}</td>
+            <td class="status-{{ alert.severity }}">{{ alert.severity }}</td>
+            <td>{{ alert.message }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="status-ok">No active alerts</p>
+    {% endif %}
+</div>
+{% endblock %}
