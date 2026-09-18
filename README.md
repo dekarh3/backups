@@ -118,7 +118,37 @@ sudo chmod 600 /opt/backups/keys/backups.key
 sudo chmod 700 /opt/backups/secrets
 ```
 
-### 4. Конфигурация
+### 4. Развертывание кода
+
+Скопируйте файлы проекта из репозитория в рабочую директорию:
+
+```bash
+# Копирование серверных скриптов
+sudo cp /path/to/repo/api.py /opt/backups/code/
+sudo cp /path/to/repo/interface.py /opt/backups/code/
+sudo cp /path/to/repo/models.py /opt/backups/code/
+sudo cp /path/to/repo/database.py /opt/backups/code/
+sudo cp /path/to/repo/config.py /opt/backups/code/
+sudo cp /path/to/repo/scheduler.py /opt/backups/code/
+sudo cp /path/to/repo/alerts.py /opt/backups/code/
+sudo cp /path/to/repo/init_db.py /opt/backups/code/
+sudo cp /path/to/repo/run_server.sh /opt/backups/code/
+
+# Копирование клиентских скриптов (опционально, если клиент устанавливается на этом же сервере для тестирования)
+sudo cp /path/to/repo/cerber.py /opt/backups/code/
+sudo cp /path/to/repo/manager.py /opt/backups/code/
+sudo cp /path/to/repo/worker.py /opt/backups/code/
+
+# Назначение прав доступа
+sudo chown -R backup-srv:backup-srv /opt/backups/code
+sudo chmod 750 /opt/backups/code
+sudo chmod 640 /opt/backups/code/*.py
+sudo chmod 750 /opt/backups/code/run_server.sh
+```
+
+*Замените `/path/to/repo` на фактический путь к клонированному репозиторию.*
+
+### 5. Конфигурация
 
 Создайте основной файл конфигурации `/opt/backups/ini/backups.ini` (владелец `backup-srv`):
 
@@ -173,7 +203,7 @@ smtp_from = backups@example.com
 smtp_to_admin = admin@example.com
 ```
 
-### 5. Установка Python-зависимостей
+### 6. Установка Python-зависимостей
 
 ```bash
 # Подготовка рабочей директории (предполагается, что код находится в /opt/backups/code)
@@ -189,7 +219,7 @@ sudo -u backup-srv venv/bin/pip install --upgrade pip
 sudo -u backup-srv venv/bin/pip install fastapi uvicorn[standard] psycopg2-binary jinja2 python-multipart pydantic cryptography python-jose passlib htpasswd
 ```
 
-### 6. Настройка SSL-сертификатов
+### 7. Настройка SSL-сертификатов
 
 Для работы в production необходим SSL-сертификат. Для тестирования можно создать самоподписанный:
 
@@ -203,7 +233,7 @@ sudo chmod 600 /opt/backups/keys/server.key
 sudo chmod 644 /opt/backups/keys/server.crt
 ```
 
-### 7. Настройка политик SELinux
+### 8. Настройка политик SELinux
 
 Для корректной работы сервисов в среде с включенным SELinux (Enforcing) необходимо настроить контексты безопасности и разрешить использование сетевых портов.
 
@@ -227,7 +257,7 @@ sudo setsebool -P httpd_can_network_connect 1
 sudo setsebool -P httpd_can_network_connect_db 1
 ```
 
-### 8. Запуск сервисов
+### 9. Запуск сервисов
 
 #### Запуск rest-server
 
