@@ -15,7 +15,7 @@
 
 ## Архитектура
 
-```
+```text
 ┌─────────────┐      HTTPS      ┌─────────────────────────────────────┐
 │   Клиент    │ ◄──────────────► │           СХД-сервер                │
 │  (Windows/  │                 │  ┌─────────────┐  ┌───────────────┐ │
@@ -36,7 +36,7 @@
 - `PostgreSQL` — Хранилище оперативного состояния системы
 
 **Компоненты клиента:**
-- `cerber.py` — Сторжевой процесс
+- `cerber.py` — Сторожевой процесс
 - `manager.py` — Управляющий агент
 - `worker.py` — Процесс выполнения бэкапа
 - `restic` — Утилита резервного копирования (0.15.2 для Windows, 0.19.1 для Linux)
@@ -52,31 +52,100 @@
 - PostgreSQL 12+
 - Свободное дисковое пространство согласно плану бэкапов
 
-### 1. Установка зависимостей
+### 1. Подготовка пользователя и установка зависимостей
+
+Все процессы сервера должны выполняться от имени выделенного системного пользователя без права интерактивного входа.
 
 ```bash
-# Обновление системы
+# Backups — Система централизованного резервного копирования
+
+Централизованная система резервного копирования на базе **restic** и **rest-server** с веб-интерфейсом управления. Предназначена для создания надежных бэкапов Windows и Linux клиентов на Linux-сервер хранения данных.
+
+## Основные возможности
+
+- **Автоматическое резервное копирование** по расписанию с поддержкой календаря рабочих дней
+- **Веб-интерфейс администратора** для мониторинга состояния, управления бэкапами и просмотра логов
+- **REST API** для программного управления системой
+- **Append-only режим** хранения данных для защиты от случайного удаления
+- **Политики хранения** с автоматической очисткой устаревших снапшотов
+- **Мониторинг и алертинг** при ошибках и проблемах с дисковым пространством
+- **Ролевая модель** с разделением прав администратора и наблюдателя
+- **Аудит действий** и логирование всех операций
+
+## Архитектура
+
+```text
+┌─────────────┐      HTTPS      ┌─────────────────────────────────────┐
+│   Клиент    │ ◄──────────────► │           СХД-сервер                │
+│  (Windows/  │                 │  ┌─────────────┐  ┌───────────────┐ │
+│   Linux)    │                 │  │ rest-server │  │   api.py      │ │
+│  - cerber.py│                 │  │  (порт 8444)│  │  (порт 9443)  │ │
+│  - manager.py│                │  └─────────────┘  └───────────────┘ │
+│  - worker.py│                 │  ┌─────────────┐  ┌───────────────┐ │
+│  - restic   │                 │  │interface.py │  │  PostgreSQL   │ │
+└─────────────┘                 │  │  (веб-UI)   │  │               │ │
+                                │  └─────────────┘  └───────────────┘ │
+                                └─────────────────────────────────────┘
+```
+
+**Компоненты сервера:**
+- `rest-server` — HTTPS-сервер для приема данных от restic (порт 8444)
+- `api.py` — FastAPI сервер управления, планировщик, очередь команд (порт 9443)
+- `interface.py` — Веб-интерфейс администратора (SSR на Jinja2)
+- `PostgreSQL` — Хранилище оперативного состояния системы
+
+**Компоненты клиента:**
+- `cerber.py` — Сторожевой процесс
+- `manager.py` — Управляющий агент
+- `worker.py` — Процесс выполнения бэкапа
+- `restic` — Утилита резервного копирования (0.15.2 для Windows, 0.19.1 для Linux)
+
+---
+
+## Установка сервера
+
+### Системные требования
+
+- ОС: RedOS 8 или совместимый Linux
+- Python 3.8+
+- PostgreSQL 12+
+- Свободное дисковое пространство согласно плану бэкапов
+
+### 1. Подготовка пользователя и установка зависимостей
+
+Все процессы сервера должны выполняться от имени выделенного системного пользователя без права интерактивного входа.
+
+```bash
+# Создание системного пользователя backup-srv (без права логина)
+sudo useradd -r -s /sbin/nologin -d /opt/backups backup-srv
+
+# Обновление системы и установка базовых зависимостей
 sudo dnf update -y
+sudo dnf install -y python3.8 python3.8-pip python3.8-devel postgresql postgresql-server git httpd-tools policycoreutils-python-utils
 
-# Установка Python и зависимостей
-sudo dnf install -y python3.8 python3.8-pip python3.8-devel postgresql postgresql-server git
-
-# Установка rest-server
-wget https://github.com/restic/rest-server/releases/download/v0.13.0/rest-server_0.13.0_linux_amd64
-sudo mv rest-server_0.13.0_linux_amd64 /usr/local/bin/rest-server
+# Установка rest-server (версия 0.14.0)
+cd /tmp
+wget https://github.com/restic/rest-server/releases/download/v0.14.0/rest-server_0.14.0_linux_amd64.tar.gz
+tar -xzf rest-server_0.14.0_linux_amd64.tar.gz --wildcards --strip-components=1 '*/rest-server'
+sudo mv rest-server /usr/local/bin/rest-server
 sudo chmod +x /usr/local/bin/rest-server
+rm -f rest-server_0.14.0_linux_amd64.tar.gz
+
+# Настройка SELinux для исполняемого файла rest-server
+sudo semanage fcontext -a -t bin_t /usr/local/bin/rest-server
+sudo restorecon -v /usr/local/bin/rest-server
 
 # Создание директорий
-sudo mkdir -p /opt/backups/{ini,secrets,keys,scripts}
+sudo mkdir -p /opt/backups/{ini,secrets,keys,scripts,auth}
 sudo mkdir -p /srv/backups/restic
 sudo mkdir -p /var/log/backups
 sudo mkdir -p /backup_cache
 
-# Установка прав
-sudo chown -R $(whoami):$(whoami) /opt/backups
-sudo chown -R $(whoami):$(whoami) /srv/backups/restic
-sudo chown -R $(whoami):$(whoami) /var/log/backups
-sudo chown -R $(whoami):$(whoami) /backup_cache
+# Назначение прав доступа пользователю backup-srv
+sudo chown -R backup-srv:backup-srv /opt/backups
+sudo chown -R backup-srv:backup-srv /srv/backups/restic
+sudo chown -R backup-srv:backup-srv /var/log/backups
+sudo chown -R backup-srv:backup-srv /backup_cache
 ```
 
 ### 2. Настройка PostgreSQL
@@ -91,7 +160,7 @@ sudo systemctl start postgresql
 
 # Создание пользователя и базы данных
 sudo -u postgres psql <<EOF
-CREATE USER backups WITH PASSWORD 'secure_password_here';
+CREATE USER backups WITH PASSWORD '<ПАРОЛЬ backups>';
 CREATE DATABASE backups OWNER backups;
 GRANT ALL PRIVILEGES ON DATABASE backups TO backups;
 EOF
@@ -100,27 +169,25 @@ EOF
 ### 3. Генерация ключей и секретов
 
 ```bash
-# Генерация ключа подписи
-mkdir -p /opt/backups/keys
-openssl genrsa -out /opt/backups/keys/backups.key 2048
-chmod 600 /opt/backups/keys/backups.key
+# Генерация ключа подписи (выполняется от имени backup-srv)
+sudo -u backup-srv openssl genrsa -out /opt/backups/keys/backups.key 2048
+sudo chmod 600 /opt/backups/keys/backups.key
 
-# Создание директории для секретов клиентов
-mkdir -p /opt/backups/secrets
-chmod 700 /opt/backups/secrets
+# Ограничение доступа к директории секретов
+sudo chmod 700 /opt/backups/secrets
 ```
 
 ### 4. Конфигурация
 
-Создайте основной файл конфигурации `/opt/backups/ini/backups.ini`:
+Создайте основной файл конфигурации `/opt/backups/ini/backups.ini` (владелец `backup-srv`):
 
 ```ini
 [global]
-base_url = https://localhost:8443
+base_url = https://localhost:8444
 api_url = https://localhost:9443
 restic_root = /srv/backups/restic
 
-db_dsn = postgresql://backups:secure_password_here@127.0.0.1:5432/backups
+db_dsn = host=127.0.0.1 port=5432 dbname=backups user=backups password=<ПАРОЛЬ backups>
 
 signing_private_key = /opt/backups/keys/backups.key
 secrets_dir = /opt/backups/secrets
@@ -168,15 +235,17 @@ smtp_to_admin = admin@example.com
 ### 5. Установка Python-зависимостей
 
 ```bash
-cd /workspace/backups
+# Подготовка рабочей директории (предполагается, что код находится в /opt/backups/code)
+sudo mkdir -p /opt/backups/code
+sudo chown -R backup-srv:backup-srv /opt/backups/code
+cd /opt/backups/code
 
-# Создание виртуального окружения
-python3.8 -m venv venv
-source venv/bin/activate
+# Создание виртуального окружения от имени backup-srv
+sudo -u backup-srv python3.8 -m venv venv
 
 # Установка зависимостей
-pip install --upgrade pip
-pip install fastapi uvicorn[standard] psycopg2-binary jinja2 python-multipart pydantic cryptography python-jose passlib htpasswd
+sudo -u backup-srv venv/bin/pip install --upgrade pip
+sudo -u backup-srv venv/bin/pip install fastapi uvicorn[standard] psycopg2-binary jinja2 python-multipart pydantic cryptography python-jose passlib htpasswd
 ```
 
 ### 6. Настройка SSL-сертификатов
@@ -184,54 +253,68 @@ pip install fastapi uvicorn[standard] psycopg2-binary jinja2 python-multipart py
 Для работы в production необходим SSL-сертификат. Для тестирования можно создать самоподписанный:
 
 ```bash
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+sudo -u backup-srv openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /opt/backups/keys/server.key \
   -out /opt/backups/keys/server.crt \
   -subj "/CN=backup-srv"
 
-chmod 600 /opt/backups/keys/server.key
-chmod 644 /opt/backups/keys/server.crt
+sudo chmod 600 /opt/backups/keys/server.key
+sudo chmod 644 /opt/backups/keys/server.crt
 ```
 
-### 7. Запуск сервисов
+### 7. Настройка политик SELinux
+
+Для корректной работы сервисов в среде с включенным SELinux (Enforcing) необходимо настроить контексты безопасности и разрешить использование сетевых портов.
+
+```bash
+# Назначение контекстов для директорий хранения и логов
+sudo semanage fcontext -a -t var_lib_t "/srv/backups/restic(/.*)?"
+sudo restorecon -Rv /srv/backups/restic
+
+sudo semanage fcontext -a -t etc_t "/opt/backups(/.*)?"
+sudo restorecon -Rv /opt/backups
+
+sudo semanage fcontext -a -t var_log_t "/var/log/backups(/.*)?"
+sudo restorecon -Rv /var/log/backups
+
+# Регистрация нестандартных портов как HTTP-портов
+sudo semanage port -a -t http_port_t -p tcp 8444
+sudo semanage port -a -t http_port_t -p tcp 9443
+
+# Разрешение сетевых подключений для веб-сервисов и БД
+sudo setsebool -P httpd_can_network_connect 1
+sudo setsebool -P httpd_can_network_connect_db 1
+```
+
+### 8. Запуск сервисов
 
 #### Запуск rest-server
 
 ```bash
 # Создание файла аутентификации
-htpasswd -cb /opt/backups/auth/restic.htpasswd admin secure_password
+sudo -u backup-srv htpasswd -cb /opt/backups/auth/restic.htpasswd admin <ПАРОЛЬ admin>
 
-# Запуск rest-server (для production используйте systemd)
-rest-server --append-only --private-repos \
+# Тестовый запуск от имени backup-srv
+sudo -u backup-srv /usr/local/bin/rest-server --append-only --private-repos \
   --path /srv/backups/restic \
-  --auth /opt/backups/auth/restic.htpasswd \
+  --htpasswd-file /opt/backups/auth/restic.htpasswd
   --tls --tls-cert /opt/backups/keys/server.crt \
   --tls-key /opt/backups/keys/server.key \
-  --listen :8443
+  --listen :8444
 ```
 
 #### Запуск api.py
 
 ```bash
-cd /workspace/backups
-source venv/bin/activate
+cd /opt/backups/code
 
-# Проверка конфигурации
-python api.py --check-config
-
-# Запуск API сервера
-uvicorn api:app --host 0.0.0.0 --port 9443 \
+# Тестовый запуск API сервера от имени backup-srv
+sudo -u backup-srv venv/bin/uvicorn api:app --host 0.0.0.0 --port 9443 \
   --ssl-keyfile /opt/backups/keys/server.key \
   --ssl-certfile /opt/backups/keys/server.crt
 ```
 
-#### Запуск web-интерфейса
-
-Web-интерфейс является частью приложения FastAPI и доступен после запуска `api.py`.
-
-По умолчанию интерфейс доступен по адресу: `https://localhost:9443/`
-
-Первый вход требует настройки администратора через базу данных или конфигурационный файл.
+*Примечание: Для production-среды настоятельно рекомендуется настроить unit-файлы `systemd` с параметрами `User=backup-srv` и `Group=backup-srv` для автоматического запуска сервисов при старте системы.*
 
 ---
 
@@ -248,8 +331,22 @@ Web-интерфейс является частью приложения FastAP
 - Python 3.8+
 - restic 0.19.1
 
-### 1. Установка зависимостей (Windows)
+### 1. Установка зависимостей
 
+**Linux:**
+```bash
+# Создание изолированного пользователя для клиента
+sudo useradd -r -s /sbin/nologin -d /opt/backups/client backup-cli
+
+# Установка Python и restic
+sudo dnf install -y python3.8 python3.8-pip
+
+wget https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64
+sudo mv restic_0.19.1_linux_amd64 /usr/local/bin/restic
+sudo chmod +x /usr/local/bin/restic
+```
+
+**Windows:**
 ```powershell
 # Скачать и установить Python 3.8 с https://www.python.org/downloads/
 
@@ -261,27 +358,19 @@ Move-Item restic_0.15.2_windows_amd64.exe C:\ProgramData\restic\restic.exe
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\ProgramData\restic", "Machine")
 ```
 
-### 1. Установка зависимостей (Linux)
-
-```bash
-# Установка Python и restic
-sudo dnf install -y python3.8 python3.8-pip
-
-wget https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64
-sudo mv restic_0.19.1_linux_amd64 /usr/local/bin/restic
-sudo chmod +x /usr/local/bin/restic
-```
-
 ### 2. Установка клиентских скриптов
 
 Скопируйте клиентские скрипты из репозитория:
 
+**Linux:**
 ```bash
-# Linux
 sudo mkdir -p /opt/backups/client
 sudo cp cerber.py manager.py worker.py /opt/backups/client/
+sudo chown -R backup-cli:backup-cli /opt/backups/client
+```
 
-# Windows (PowerShell от администратора)
+**Windows:**
+```powershell
 New-Item -ItemType Directory -Force -Path "C:\ProgramData\backups\client"
 Copy-Item cerber.py, manager.py, worker.py "C:\ProgramData\backups\client\"
 ```
@@ -299,13 +388,19 @@ name = client01
 enabled = true
 
 server_api_url = https://backup-srv:9443
-server_rest_url = https://backup-srv:8443
+server_rest_url = https://backup-srv:8444
 
 agent_token_file = /opt/backups/secrets/agent.token
 ca_cert_file = /opt/backups/keys/ca.crt
 
 timezone = Europe/Moscow
 log_dir = /var/log/backups_client
+```
+
+**Важно для Linux:** Создайте директорию для логов и передайте права пользователю `backup-cli`:
+```bash
+sudo mkdir -p /var/log/backups_client
+sudo chown -R backup-cli:backup-cli /var/log/backups_client
 ```
 
 ### 4. Получение токена аутентификации
@@ -316,7 +411,8 @@ log_dir = /var/log/backups_client
 
 ```bash
 # Генерация токена для клиента
-python -c "import secrets; print(secrets.token_hex(32))" > /opt/backups/secrets/client01.agent.token
+python3.8 -c "import secrets; print(secrets.token_hex(32))" > /opt/backups/secrets/client01.agent.token
+sudo chown backup-srv:backup-srv /opt/backups/secrets/client01.agent.token
 chmod 600 /opt/backups/secrets/client01.agent.token
 
 # Скопируйте токен на клиент в файл, указанный в agent_token_file
@@ -333,7 +429,7 @@ chmod 600 /opt/backups/secrets/client01.agent.token
 name = client01
 enabled = true
 
-rest_server_base_url = https://backup-srv:8443
+rest_server_base_url = https://backup-srv:8444
 rest_http_user = client01
 rest_http_password_file = /opt/backups/secrets/client01.rest-http.pass
 
@@ -347,11 +443,12 @@ timezone = Europe/Moscow
 
 ```bash
 # Генерация пароля
-python -c "import secrets; print(secrets.token_urlsafe(32))" > /opt/backups/secrets/client01.rest-http.pass
+python3.8 -c "import secrets; print(secrets.token_urlsafe(32))" > /opt/backups/secrets/client01.rest-http.pass
+sudo chown backup-srv:backup-srv /opt/backups/secrets/client01.rest-http.pass
 chmod 600 /opt/backups/secrets/client01.rest-http.pass
 
 # Добавление пользователя в rest-server
-htpasswd -b /opt/backups/auth/restic.htpasswd client01 $(cat /opt/backups/secrets/client01.rest-http.pass)
+sudo -u backup-srv htpasswd -b /opt/backups/auth/restic.htpasswd client01 $(cat /opt/backups/secrets/client01.rest-http.pass)
 ```
 
 ### 6. Запуск клиента
@@ -359,24 +456,24 @@ htpasswd -b /opt/backups/auth/restic.htpasswd client01 $(cat /opt/backups/secret
 **Linux:**
 
 ```bash
-cd /opt/backups/client
-python3.8 cerber.py &
+# Тестовый запуск от имени пользователя backup-cli
+sudo -u backup-cli python3.8 /opt/backups/client/cerber.py &
 
-# Для автозапуска добавьте в systemd
+# Для автозапуска создайте systemd unit (User=backup-cli)
 sudo systemctl enable backups-client
 sudo systemctl start backups-client
 ```
 
 **Windows:**
 
-Создайте службу Windows или используйте планировщик задач:
+Для обеспечения безопасности создайте выделенную локальную учетную запись (например, `svc_backup`), запретите ей локальный вход (Deny log on locally) и разрешите вход в качестве службы (Log on as a service).
 
 ```powershell
-# Запуск через PowerShell (тестовый режим)
-cd C:\ProgramData\backups\client
-python cerber.py
-
-# Для production настройте как службу Windows NSSM или аналогичным инструментом
+# Настройка службы через NSSM (Non-Sucking Service Manager)
+nssm install BackupsClient "C:\Python38\python.exe" "C:\ProgramData\backups\client\cerber.py"
+nssm set BackupsClient AppDirectory "C:\ProgramData\backups\client"
+nssm set BackupsClient ObjectName ".\svc_backup" "Password"
+nssm start BackupsClient
 ```
 
 ---
@@ -386,19 +483,18 @@ python cerber.py
 ### 1. Первый запуск сервера
 
 ```bash
-cd /workspace/backups
-source venv/bin/activate
+cd /opt/backups/code
 
-# Инициализация базы данных
-python init_db.py
+# Инициализация базы данных (от имени backup-srv)
+sudo -u backup-srv venv/bin/python init_db.py
 
 # Запуск всех сервисов (разработка)
-./run_server.sh
+sudo -u backup-srv ./run_server.sh
 ```
 
 ### 2. Добавление первого бэкапа
 
-Создайте конфигурацию бэкапа `/opt/backups/ini/backups/client01.documents.ini`:
+Создайте конфигурацию бэкапа `/opt/backups/ini/backups/client01.documents.ini` (не забудьте назначить владельца `backup-srv`):
 
 ```ini
 [backup]
@@ -407,7 +503,7 @@ name = documents
 enabled = true
 
 repository = /client01/documents
-repository_url = https://backup-srv:8443/client01/documents
+repository_url = https://backup-srv:8444/client01/documents
 
 schedule = 0 22 * * *
 
@@ -435,8 +531,8 @@ respect_calendar = true
 
 ## Структура проекта
 
-```
-/workspace/backups/
+```text
+/opt/backups/code/
 ├── api.py              # Сервер управления (FastAPI)
 ├── interface.py        # Веб-интерфейс
 ├── models.py           # Модели данных
@@ -463,6 +559,8 @@ respect_calendar = true
 - Аудит всех действий администраторов
 - Двухфакторная аутентификация для веб-интерфейса
 - Изоляция репозиториев клиентов
+- **Принцип наименьших привилегий:** процессы сервера и клиента выполняются от изолированных системных пользователей без права интерактивного входа (`/sbin/nologin`)
+- **SELinux:** настроены строгие политики мандатного контроля доступа для файлов, портов и сетевых взаимодействий
 
 ---
 
@@ -475,4 +573,4 @@ respect_calendar = true
 
 ## Лицензия
 
-Проект распространяется под лицензией MIT. См. файл [LICENSE](LICENSE).
+Проект распространяется под лицензией GNU GPL v3. См. файл [LICENSE]
