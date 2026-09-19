@@ -11,7 +11,14 @@ from fastapi import HTTPException
 
 # Import the API module
 import sys
-sys.path.insert(0, '/workspace/backups/server')
+import os
+from pathlib import Path
+
+# Add server directory to path (relative to test file location)
+current_dir = Path(__file__).parent
+server_dir = current_dir.parent / 'server'
+sys.path.insert(0, str(server_dir))
+
 from api import app, Config, Command, ClientStatus, BackupStatus
 
 

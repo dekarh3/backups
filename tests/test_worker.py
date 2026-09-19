@@ -10,7 +10,11 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch, Mock
 from pathlib import Path
 
-sys.path.insert(0, '/workspace/backups/client')
+# Add client directory to path (relative to test file location)
+current_dir = Path(__file__).parent
+client_dir = current_dir.parent / 'client'
+sys.path.insert(0, str(client_dir))
+
 from worker import BackupWorker, load_config
 
 

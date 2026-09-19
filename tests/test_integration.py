@@ -12,8 +12,16 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch, AsyncMock
 from pathlib import Path
 
-sys.path.insert(0, '/workspace/backups/server')
-sys.path.insert(0, '/workspace/backups/client')
+import sys
+import os
+from pathlib import Path
+
+# Add server and client directories to path (relative to test file location)
+current_dir = Path(__file__).parent
+server_dir = current_dir.parent / 'server'
+client_dir = current_dir.parent / 'client'
+sys.path.insert(0, str(server_dir))
+sys.path.insert(0, str(client_dir))
 
 from fastapi.testclient import TestClient
 from api import app, Config, Command
