@@ -123,30 +123,29 @@ sudo chmod 700 /opt/backups/secrets
 Скопируйте файлы проекта из репозитория в рабочую директорию:
 
 ```bash
-# Копирование серверных скриптов
-sudo cp /path/to/repo/api.py /opt/backups/code/
-sudo cp /path/to/repo/interface.py /opt/backups/code/
-sudo cp /path/to/repo/models.py /opt/backups/code/
-sudo cp /path/to/repo/database.py /opt/backups/code/
-sudo cp /path/to/repo/config.py /opt/backups/code/
-sudo cp /path/to/repo/scheduler.py /opt/backups/code/
-sudo cp /path/to/repo/alerts.py /opt/backups/code/
-sudo cp /path/to/repo/init_db.py /opt/backups/code/
-sudo cp /path/to/repo/run_server.sh /opt/backups/code/
+# Создание директории для кода
+sudo mkdir -p /opt/backups/code
 
-# Копирование клиентских скриптов (опционально, если клиент устанавливается на этом же сервере для тестирования)
-sudo cp /path/to/repo/cerber.py /opt/backups/code/
-sudo cp /path/to/repo/manager.py /opt/backups/code/
-sudo cp /path/to/repo/worker.py /opt/backups/code/
+# Копирование всех файлов из репозитория
+sudo cp -r /path/to/repo/server/* /opt/backups/code/
+sudo cp -r /path/to/repo/client/* /opt/backups/code/  # если нужна клиентская часть
+sudo cp /path/to/repo/*.md /opt/backups/code/  # документация
+sudo cp /path/to/repo/*.ini /opt/backups/code/  # шаблоны конфигов
 
 # Назначение прав доступа
 sudo chown -R backup-srv:backup-srv /opt/backups/code
 sudo chmod 750 /opt/backups/code
 sudo chmod 640 /opt/backups/code/*.py
-sudo chmod 750 /opt/backups/code/run_server.sh
+sudo chmod 750 /opt/backups/code/*.sh
 ```
 
 *Замените `/path/to/repo` на фактический путь к клонированному репозиторию.*
+
+**Проверка:** Убедитесь, что в `/opt/backups/code` присутствуют необходимые файлы:
+```bash
+ls -la /opt/backups/code/
+# Должны быть: api.py, rest_server_wrapper.py, и другие файлы проекта
+```
 
 ### 5. Конфигурация
 
